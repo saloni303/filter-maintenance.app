@@ -392,7 +392,7 @@ def validate_param(key, value):
     p   = PARAMS[key]
     lbl = p["label"]
 
-    if value < p["bis_min"] or value > p["bis_max"]:
+    if value < float(p["bis_min"]) or value > float(p["bis_max"]):
         return ("warn",
                 f"{lbl} {value} {p['unit']} is outside BIS IS 10500 "
                 f"({p['bis_min']}–{p['bis_max']}). "

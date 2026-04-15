@@ -392,7 +392,7 @@ def validate_param(key, value):
     p   = PARAMS[key]
     lbl = p["label"]
 
-    if value < float(p["bis_min"]) or value > float(p["bis_max"]):
+    if float(value) < float(p["bis_min"]) or float(value) > float(p["bis_max"]):
         return ("warn",
                 f"{lbl} {value} {p['unit']} is outside BIS IS 10500 "
                 f"({p['bis_min']}–{p['bis_max']}). "
@@ -424,53 +424,44 @@ def validate_all(readings: dict):
 #    Score drops  as deviation from ideal increases
 #    Score = 0    at extreme ends
 #
+
 def score_ph(ph):
-    """
-    BIS ideal: 6.5 – 8.5, ideal centre 7.5
-    Full 100 inside [6.5, 8.5]. Penalise outside.
-    """
-    p = PARAMS["ph"]
-    if p["bis_min"] <= ph <= p["bis_max"]:
-        # small internal variation still gives ≥ 85
-        return round(max(85.0, 100 - abs(ph - p["bis_ideal"]) * 10), 2)
+    if 6.5 <= ph <= 8.5:
+        return round(max(50.0, 100 - abs(ph - 7.5) * 20), 2)
     else:
-        dev = min(abs(ph - p["bis_min"]), abs(ph - p["bis_max"]))
-        return round(max(0.0, 85 - dev * 28), 2)
+        dev = min(abs(ph - 6.5), abs(ph - 8.5))
+        return round(max(0.0, 50 - dev * 45), 2)
 
 
 def score_tds(tds):
-    """
-    BIS ideal: 150 – 300, centre 225
-    Full 100 inside ideal. Penalise proportionally outside.
-    """
-    p = PARAMS["tds"]
-    if p["bis_min"] <= tds <= p["bis_max"]:
-        return round(max(80.0, 100 - abs(tds - p["bis_ideal"]) / 5), 2)
+    if tds < 150:
+        return round(max(0.0, 100 - ((150 - tds) / 150) * 70), 2)
+    elif tds <= 300:
+        return round(max(50.0, 100 - abs(tds - 225) / 3), 2)
+    elif tds <= 500:
+        return round(max(10.0, 60 - ((tds - 300) / 200) * 55), 2)
     else:
-        dev = min(abs(tds - p["bis_min"]), abs(tds - p["bis_max"]))
-        return round(max(0.0, 80 - dev / 4), 2)
+        return round(max(0.0, 10 - ((tds - 500) / 100) * 5), 2)
 
 
 def score_hardness(h):
-    """
-    BIS max 200. Lower is better. Ideal centre 100.
-    """
-    if h <= 200:
-        return round(max(70.0, 100 - (h / 200) * 20), 2)
+    if h <= 100:
+        return round(100 - (h / 100) * 8, 2)
+    elif h <= 200:
+        return round(max(40.0, 92 - ((h - 100) / 100) * 52), 2)
+    elif h <= 400:
+        return round(max(5.0, 40 - ((h - 200) / 200) * 35), 2)
     else:
-        return round(max(0.0, 70 - ((h - 200) / 10) * 3), 2)
+        return round(max(0.0, 5 - ((h - 400) / 100) * 2), 2)
 
 
 def score_alkalinity(a):
-    """
-    BIS max 300. Ideal 150.
-    """
-    p = PARAMS["alkalinity"]
-    if a <= p["bis_max"]:
-        return round(max(70.0, 100 - abs(a - p["bis_ideal"]) / 6), 2)
+    if a <= 150:
+        return round(max(55.0, 100 - (abs(a - 150) / 150) * 35), 2)
+    elif a <= 300:
+        return round(max(40.0, 100 - ((a - 150) / 150) * 60), 2)
     else:
-        return round(max(0.0, 70 - ((a - p["bis_max"]) / 10) * 2.5), 2)
-
+        return round(max(0.0, 40 - ((a - 300) / 100) * 30), 2)
 
 def calc_fhi(ph, tds, hardness, alkalinity):
     """
@@ -529,11 +520,19 @@ def deterioration_rate(fhis):
     return round(float(slope), 3)
 
 
-def predict_days(cur_fhi, rate, threshold=40):
-    """Days until FHI crosses critical threshold (40)."""
+def predict_days(cur_fhi, rate, threshold=60):
+    """
+    Days until FHI crosses maintenance threshold.
+    Threshold = 60 (Moderate→Poor boundary).
+    Maintenance should be recommended when filter goes Poor,
+    NOT when it becomes Critical (40) which is already too late.
+    If already below 60, predict days until critical (40).
+    """
     if rate >= 0:
         return None   # stable or improving
-    weeks = (cur_fhi - threshold) / abs(rate)
+    # If already in Poor/Critical zone, predict days until critical
+    effective_threshold = 40 if cur_fhi < 60 else 60
+    weeks = (cur_fhi - effective_threshold) / abs(rate)
     return max(1, round(weeks * 7))
 
 
